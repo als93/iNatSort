@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iNat Triage</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        const v = n => `rgb(var(--${n}) / <alpha-value>)`;
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: { bg: v('bg'), surface: v('surface'), ink: v('ink'), muted: v('muted'), line: v('line'), accent: v('accent'), rust: v('rust') },
+                    fontFamily: {
+                        serif: ['Fraunces', 'Georgia', 'serif'],
+                        sans: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root { --bg: 241 237 227; --surface: 250 248 242; --ink: 30 28 24; --muted: 122 115 102; --line: 216 209 194; --accent: 58 88 56; --rust: 176 72 40; }
+        .dark { --bg: 19 21 18; --surface: 27 30 26; --ink: 234 229 216; --muted: 140 136 124; --line: 50 54 48; --accent: 150 184 128; --rust: 224 124 86; }
+        body { font-family: 'Instrument Sans', system-ui, sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgb(var(--line)); }
+    </style>
+    <style type="text/tailwindcss">
+        .label { @apply font-mono text-[10px] uppercase tracking-[0.14em] text-muted; }
+        .btn { @apply inline-flex items-center gap-2 px-3 py-1.5 border border-line text-xs font-medium hover:border-ink transition-colors; }
+        .btn-solid { @apply inline-flex items-center gap-2 px-4 py-2 bg-ink text-bg text-xs font-semibold hover:bg-accent transition-colors; }
+        .field { @apply w-full px-3 py-2 bg-bg border border-line font-mono text-xs focus:outline-none focus:border-accent; }
+        .help { @apply text-[11px] text-muted mt-1 leading-snug; }
+        kbd { @apply font-mono text-[10px] px-1 border border-line text-muted; }
+    </style>
+</head>
+<body class="h-full bg-bg text-ink flex flex-col overflow-hidden">
+
+    <header class="border-b border-line px-5 py-3 flex items-center justify-between shrink-0">
+        <h1 class="font-serif text-2xl leading-none tracking-tight">iNat <em class="text-accent">Triage</em></h1>
+
+        <div class="flex items-center gap-3">
+            <div class="hidden sm:flex items-center gap-4 font-mono text-[11px] text-muted">
+                <span title="Observations seen (stored locally)">seen <strong id="stat-triaged" class="text-ink font-medium">0</strong></span>
+                <span>streak <strong id="stat-streak" class="text-ink font-medium">0</strong></span>
+            </div>
+            <button id="btn-auth-status" onclick="openSettingsModal()" class="btn font-mono text-[11px]">
+                <span class="w-1.5 h-1.5 rounded-full bg-accent" id="auth-dot"></span>
+                <span id="auth-label">Connecting…</span>
+            </button>
+            <button onclick="toggleDarkMode()" class="btn px-2.5" title="Toggle theme">
+                <i class="fa-solid fa-moon dark:hidden"></i>
+                <i class="fa-solid fa-sun hidden dark:block"></i>
+            </button>
+            <button onclick="openSettingsModal()" class="btn px-2.5" title="Settings">
+                <i class="fa-solid fa-sliders"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+
+        <section class="flex-1 flex flex-col lg:w-3/5 xl:w-2/3 lg:border-r border-line overflow-y-auto custom-scrollbar p-4 lg:p-6">
+
+            <div class="flex items-baseline justify-between mb-3 font-mono text-xs">
+                <div class="flex items-baseline gap-3 min-w-0">
+                    <span id="obs-id-badge" class="text-ink font-medium">#------</span>
+                    <span id="obs-user" class="text-muted truncate">Loading…</span>
+                </div>
+                <a id="obs-inat-link" href="#" target="_blank" class="text-accent hover:underline shrink-0">Open on iNat ↗</a>
+            </div>
+
+            <div class="relative bg-[#0e0f0d] overflow-hidden flex-1 min-h-[320px] max-h-[560px] flex items-center justify-center group">
+                <div id="carousel-loader" class="absolute inset-0 flex items-center justify-center bg-[#0e0f0d]/85 z-10">
+                    <span class="font-mono text-[11px] uppercase tracking-[0.14em] text-white/60 animate-pulse">Loading…</span>
+                </div>
+
+                <img id="carousel-img" src="" alt="Observation photo" class="max-h-full max-w-full object-contain cursor-zoom-in" onclick="openImageModal()">
+
+                <div id="audio-container" class="hidden absolute bottom-12 left-4 right-4 bg-black/75 backdrop-blur p-2.5 flex items-center gap-3 z-10 text-white">
+                    <button id="audio-play-btn" onclick="toggleAudio()" class="w-8 h-8 rounded-full border border-white/40 flex items-center justify-center hover:bg-white hover:text-black transition-colors">
+                        <i class="fa-solid fa-play text-xs" id="audio-icon"></i>
+                    </button>
+                    <span class="font-mono text-[11px] uppercase tracking-[0.14em] text-white/80">Sound recording</span>
+                    <audio id="obs-audio" src="" preload="none"></audio>
+                </div>
+
+                <button onclick="prevPhoto()" id="btn-prev-photo" class="absolute left-0 inset-y-0 w-14 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button onclick="nextPhoto()" id="btn-next-photo" class="absolute right-0 inset-y-0 w-14 text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+
+                <div id="photo-counter" class="absolute bottom-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-black/60 text-white font-mono text-[11px]">1 / 1</div>
+            </div>
+
+            <div class="mt-5 space-y-5 text-xs">
+                <dl class="grid grid-cols-1 sm:grid-cols-3 border-t border-line">
+                    <div class="py-2.5 sm:pr-4 border-b sm:border-b-0 border-line">
+                        <dt class="label mb-1">Observed</dt>
+                        <dd id="obs-date" class="font-mono">—</dd>
+                    </div>
+                    <div class="py-2.5 sm:px-4 sm:border-l border-b sm:border-b-0 border-line min-w-0">
+                        <dt class="label mb-1">Location</dt>
+                        <dd id="obs-place" class="truncate" title="Location">—</dd>
+                    </div>
+                    <div class="py-2.5 sm:pl-4 sm:border-l border-line">
+                        <dt class="label mb-1">License / Grade</dt>
+                        <dd id="obs-license" class="font-mono">—</dd>
+                    </div>
+                </dl>
+
+                <div id="obs-desc-box" class="hidden border-l-2 border-rust pl-3">
+                    <span class="label block mb-1">Notes</span>
+                    <p id="obs-desc" class="font-serif italic text-sm leading-relaxed"></p>
+                </div>
+
+                <div id="obs-extra-box" class="hidden">
+                    <span class="label block mb-2">Uploader details</span>
+                    <dl id="obs-extra" class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5"></dl>
+                </div>
+
+                <div>
+                    <span class="label block mb-2">Existing IDs</span>
+                    <div id="obs-identifications" class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                        <span class="text-muted italic">None yet</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="w-full lg:w-2/5 xl:w-1/3 bg-surface flex flex-col h-full overflow-hidden">
+
+            <div class="px-5 py-4 border-b border-line flex items-center justify-between">
+                <h2 class="font-serif text-xl">Identify</h2>
+                <button onclick="skipObservation()" class="btn" title="Skip (S)">Skip <kbd>S</kbd></button>
+            </div>
+
+            <div class="flex-1 p-5 overflow-y-auto custom-scrollbar space-y-6">
+
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-0 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none"></i>
+                    <input type="text" id="custom-taxon-search" oninput="handleTaxonSearch(this.value)" placeholder="Search any taxon…" class="w-full pl-6 pr-8 py-2 bg-transparent border-b border-line text-sm focus:outline-none focus:border-accent placeholder:text-muted">
+                    <kbd class="absolute right-0 top-1/2 -translate-y-1/2">C</kbd>
+                    <div id="taxon-search-results" class="hidden absolute left-0 right-0 top-full mt-1 bg-surface border border-line shadow-lg z-30 max-h-64 overflow-y-auto custom-scrollbar"></div>
+                </div>
+
+                <div>
+                    <span class="label block mb-2">Groups</span>
+                    <div id="taxa-grid" class="grid grid-cols-2 border-t border-l border-line"></div>
+                </div>
+
+                <div>
+                    <span class="label block mb-2">Other</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="handleSpecialAction('cannot_be_determined')" class="btn justify-center py-2">Can't determine</button>
+                        <button onclick="handleSpecialAction('cultivated')" class="btn justify-center py-2">Captive / cultivated</button>
+                    </div>
+                </div>
+
+                <p class="font-mono text-[10px] text-muted flex flex-wrap gap-x-3 gap-y-1">
+                    <span><kbd>1–9</kbd> group</span><span><kbd>S</kbd> skip</span><span><kbd>Z</kbd> undo</span><span><kbd>C</kbd> search</span>
+                </p>
+            </div>
+
+            <div class="px-5 py-3 border-t border-line flex items-center justify-between font-mono text-[11px] text-muted">
+                <span id="queue-status">Queue empty</span>
+                <button onclick="fetchBatchObservations()" class="text-accent hover:underline flex items-center gap-1.5">
+                    <i class="fa-solid fa-rotate text-[10px]"></i> Refresh
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <div id="sub-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4" onclick="if (event.target === this) closeSubModal()">
+        <div class="bg-surface max-w-md w-full border border-line shadow-2xl" id="sub-modal-content">
+            <div class="px-5 py-4 border-b border-line flex items-center justify-between">
+                <h3 id="sub-modal-title" class="font-serif text-lg">Choose</h3>
+                <button onclick="closeSubModal()" class="text-muted hover:text-ink"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="sub-modal-list" class="max-h-[65vh] overflow-y-auto custom-scrollbar divide-y divide-line"></div>
+        </div>
+    </div>
+
+    <div id="undo-toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-ink text-bg pl-4 pr-2 py-2 shadow-2xl flex items-center gap-4 z-50 hidden transform translate-y-10 opacity-0 transition-all duration-300">
+        <div class="relative w-7 h-7 flex items-center justify-center shrink-0">
+            <svg class="w-7 h-7 -rotate-90" viewBox="0 0 32 32">
+                <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2" class="opacity-20 fill-none" />
+                <circle id="undo-progress-circle" cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2" class="text-accent fill-none transition-all duration-1000" stroke-dasharray="87.96" stroke-dashoffset="0" />
+            </svg>
+            <span id="undo-countdown" class="absolute font-mono text-[10px]">6</span>
+        </div>
+        <p id="undo-toast-text" class="text-xs"></p>
+        <button onclick="triggerUndo()" class="px-3 py-1.5 border border-bg/30 hover:bg-bg hover:text-ink font-mono text-[11px] uppercase tracking-[0.14em] transition-colors">Undo</button>
+    </div>
+
+    <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-surface max-w-lg w-full border border-line shadow-2xl">
+            <div class="px-5 py-4 border-b border-line flex items-center justify-between">
+                <h3 class="font-serif text-lg">Settings</h3>
+                <button onclick="closeSettingsModal()" class="text-muted hover:text-ink"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-5 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar text-xs">
+                <div>
+                    <div class="flex items-baseline justify-between mb-1.5">
+                        <label for="input-api-token" class="label">API token</label>
+                        <a href="https://www.inaturalist.org/users/api_token" target="_blank" rel="noopener noreferrer" class="font-mono text-[11px] text-accent hover:underline">Get token ↗</a>
+                    </div>
+                    <textarea id="input-api-token" rows="3" placeholder="Paste the token or the full JSON" class="field resize-none"></textarea>
+                    <p class="help">Expires after 24 hours and stays on this device. Without it you can browse but not post IDs.</p>
+                </div>
+
+                <div>
+                    <label for="input-skip-days" class="label block mb-1.5">Skip uploads newer than (days)</label>
+                    <input type="number" id="input-skip-days" min="0" max="3650" step="1" inputmode="numeric" class="field">
+                    <p class="help">Leaves fresh uploads for others. 0 includes everything.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="select-quality" class="label block mb-1.5">Quality grade</label>
+                        <select id="select-quality" class="field">
+                            <option value="needs_id">Needs ID</option>
+                            <option value="research">Research</option>
+                            <option value="any">Any</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="input-place-id" class="label block mb-1.5">Place ID</label>
+                        <input type="text" id="input-place-id" placeholder="optional, e.g. 1" class="field">
+                    </div>
+                </div>
+
+                <div class="space-y-2.5">
+                    <label for="input-unknown-only" class="flex items-start gap-2.5 cursor-pointer">
+                        <input type="checkbox" id="input-unknown-only" class="mt-0.5 w-3.5 h-3.5 accent-[rgb(var(--accent))]">
+                        <span><span class="font-semibold">Unknown only</span> <span class="text-muted">— no identifications at all</span></span>
+                    </label>
+                    <label for="input-oldest-first" class="flex items-start gap-2.5 cursor-pointer">
+                        <input type="checkbox" id="input-oldest-first" class="mt-0.5 w-3.5 h-3.5 accent-[rgb(var(--accent))]">
+                        <span><span class="font-semibold">Oldest first</span> <span class="text-muted">— sort by observed date</span></span>
+                    </label>
+                </div>
+
+                <div class="pt-4 border-t border-line flex items-center justify-between">
+                    <span class="text-muted"><strong id="settings-triaged-count" class="text-ink font-mono">0</strong> observations seen</span>
+                    <button onclick="clearLocalStorageHistory()" class="btn text-rust border-rust/40 hover:border-rust">Clear history</button>
+                </div>
+            </div>
+            <div class="px-5 py-4 border-t border-line flex justify-end gap-2">
+                <button onclick="closeSettingsModal()" class="btn px-4 py-2">Cancel</button>
+                <button onclick="saveSettings()" class="btn-solid">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="image-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4 cursor-zoom-out" onclick="closeImageModal()">
+        <img id="modal-zoomed-img" src="" class="max-h-[92vh] max-w-[92vw] object-contain">
+    </div>
+
+    <script>
+        const DEFAULT_GROUPS = [
+            { key: '1', name: 'Plants', icon: 'fa-seedling', color: 'bg-accent', taxonId: 47126, sub: [
+                { name: 'Monocots (Liliopsida)', taxonId: 47163 },
+                { name: 'Dicots (Magnoliopsida)', taxonId: 47124 },
+                { name: 'Gymnosperms (Conifers/Cycads)', taxonId: 136329 },
+                { name: 'Ferns & Allies (Polypodiopsida)', taxonId: 47118 },
+                { name: 'General Plants (Plantae)', taxonId: 47126 }
+            ]},
+            { key: '2', name: 'Insects', icon: 'fa-bug', color: 'bg-amber-500', taxonId: 47158, sub: [
+                { name: 'Beetles (Coleoptera)', taxonId: 47208 },
+                { name: 'Moths & Butterflies (Lepidoptera)', taxonId: 47157 },
+                { name: 'Bees, Wasps, Ants (Hymenoptera)', taxonId: 47192 },
+                { name: 'True Bugs (Hemiptera)', taxonId: 47743 },
+                { name: 'Flies (Diptera)', taxonId: 47821 },
+                { name: 'General Insects (Insecta)', taxonId: 47158 }
+            ]},
+            { key: '3', name: 'Birds', icon: 'fa-dove', color: 'bg-sky-500', taxonId: 3, sub: [] },
+            { key: '4', name: 'Fungi', icon: 'fa-mushroom', color: 'bg-purple-500', taxonId: 47170, sub: [
+                { name: 'Basidiomycota (Mushrooms/Brackets)', taxonId: 47169 },
+                { name: 'Ascomycota (Sac Fungi/Lichens)', taxonId: 48250 },
+                { name: 'General Fungi (Fungi)', taxonId: 47170 }
+            ]},
+            { key: '5', name: 'Mammals', icon: 'fa-paw', color: 'bg-orange-500', taxonId: 40151, sub: [] },
+            { key: '6', name: 'Reptiles & Amphibians', icon: 'fa-frog', color: 'bg-lime-600', taxonId: 20978, sub: [
+                { name: 'Reptiles (Reptilia)', taxonId: 26036 },
+                { name: 'Amphibians (Amphibia)', taxonId: 20978 }
+            ]},
+            { key: '7', name: 'Arachnids', icon: 'fa-spider', color: 'bg-red-500', taxonId: 47119, sub: [] },
+            { key: '8', name: 'Mollusks', icon: 'fa-shell', color: 'bg-teal-500', taxonId: 47115, sub: [] },
+            { key: '9', name: 'Life', icon: 'fa-dna', color: 'bg-indigo-500', taxonId: 48460, sub: [] }
+        ];
+
+        const DEFAULT_SKIP_DAYS = 7;
+
+        function parseSkipDays(value) {
+            const n = parseInt(value, 10);
+            return Number.isFinite(n) && n >= 0 ? Math.min(n, 3650) : DEFAULT_SKIP_DAYS;
+        }
+
+        // Accepts a bare token or the JSON returned by inaturalist.org/users/api_token
+        function extractToken(raw) {
+            const text = raw.trim();
+            if (text.startsWith('{')) {
+                try {
+                    const parsed = JSON.parse(text);
+                    if (parsed && typeof parsed.api_token === 'string') return parsed.api_token.trim();
+                } catch (e) { /* fall through to raw text */ }
+            }
+            return text;
+        }
+
+        let state = {
+            token: localStorage.getItem('inat_token') || '',
+            quality: localStorage.getItem('inat_quality') || 'needs_id',
+            placeId: localStorage.getItem('inat_place') || '',
+            skipDays: parseSkipDays(localStorage.getItem('inat_skip_days')),
+            unknownOnly: localStorage.getItem('inat_unknown_only') === 'true',
+            oldestFirst: localStorage.getItem('inat_oldest_first') === 'true',
+            triagedIds: JSON.parse(localStorage.getItem('inat_triaged_ids') || '[]'),
+            streak: parseInt(localStorage.getItem('inat_streak') || '0', 10),
+            observations: [],
+            currentIndex: 0,
+            currentPhotoIndex: 0,
+            undoBuffer: null,
+            undoTimer: null,
+            searchTimeout: null
+        };
+
+        // Initialize App on Window Load
+        window.onload = function() {
+            initTheme();
+            renderTaxaGrid();
+            updateStats();
+            
+            if (!state.token) {
+                openSettingsModal();
+            } else {
+                validateTokenAndFetch();
+            }
+
+            // Keyboard navigation listener
+            window.addEventListener('keydown', handleKeyPress);
+        };
+
+        function initTheme() {
+            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        }
+
+        function toggleDarkMode() {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                localStorage.theme = 'light';
+            } else {
+                document.documentElement.classList.add('dark');
+                localStorage.theme = 'dark';
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('stat-triaged').textContent = state.triagedIds.length;
+            document.getElementById('stat-streak').textContent = state.streak;
+            document.getElementById('settings-triaged-count').textContent = state.triagedIds.length;
+        }
+
+        function renderTaxaGrid() {
+            const grid = document.getElementById('taxa-grid');
+            grid.innerHTML = '';
+
+            DEFAULT_GROUPS.forEach((g, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `p-3  border border-slate-200 dark:border-slate-800 border border-line hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center space-x-3 transition-all group text-left`;
+                btn.innerHTML = `
+                    <div class="w-8 h-8  ${g.color} text-white flex items-center justify-center shrink-0 shadow-sm">
+                        <i class="fa-solid ${g.icon} text-xs"></i>
+                    </div>
+                    <div class="flex-1 truncate">
+                        <span class="font-semibold text-xs text-ink block truncate">${g.name}</span>
+                        <span class="text-[10px] text-muted block">${g.sub.length ? g.sub.length + ' sub-classes' : 'Direct ID'}</span>
+                    </div>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded border border-line font-mono text-ink">${g.key}</span>
+                `;
+                btn.onclick = () => handleGroupClick(g);
+                grid.appendChild(btn);
+            });
+        }
+
+        function handleGroupClick(group) {
+            if (!state.observations.length) return;
+            if (group.sub && group.sub.length > 0) {
+                openSubModal(group);
+            } else {
+                queueSubmission({ name: group.name, taxonId: group.taxonId });
+            }
+        }
+
+        function openSubModal(group) {
+            const modal = document.getElementById('sub-modal');
+            const title = document.getElementById('sub-modal-title');
+            const list = document.getElementById('sub-modal-list');
+
+            title.innerHTML = `<i class="fa-solid fa-list-tree text-accent"></i> ${group.name}: Select Sub-classification`;
+            list.innerHTML = '';
+
+            // Add general group option first
+            const btnGeneral = document.createElement('button');
+            btnGeneral.className = `w-full text-left p-3  border border-line  dark: hover:border-accent border border-transparent transition-all flex items-center justify-between`;
+            btnGeneral.innerHTML = `
+                <span class="font-semibold text-xs text-ink">General ${group.name}</span>
+                <span class="text-[10px] font-mono border border-line px-2 py-0.5 rounded text-ink">ID: ${group.taxonId}</span>
+            `;
+            btnGeneral.onclick = () => {
+                closeSubModal();
+                queueSubmission({ name: `General ${group.name}`, taxonId: group.taxonId });
+            };
+            list.appendChild(btnGeneral);
+
+            // Add specific sub-classes with correct taxonId
+            group.sub.forEach(sub => {
+                const btnSub = document.createElement('button');
+                btnSub.className = `w-full text-left p-3  border border-line  dark: hover:border-accent border border-transparent transition-all flex items-center justify-between`;
+                btnSub.innerHTML = `
+                    <span class="font-semibold text-xs text-ink">${sub.name}</span>
+                    <span class="text-[10px] font-mono border border-line px-2 py-0.5 rounded text-ink">ID: ${sub.taxonId}</span>
+                `;
+                btnSub.onclick = () => {
+                    closeSubModal();
+                    queueSubmission({ name: sub.name, taxonId: sub.taxonId });
+                };
+                list.appendChild(btnSub);
+            });
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeSubModal() {
+            document.getElementById('sub-modal').classList.add('hidden');
+        }
+
+        function handleTaxonSearch(query) {
+            clearTimeout(state.searchTimeout);
+            const dropdown = document.getElementById('taxon-search-results');
+            
+            if (!query || query.trim().length < 2) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            state.searchTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch(`https://api.inaturalist.org/v1/taxa?q=${encodeURIComponent(query)}&per_page=8`);
+                    const data = await res.json();
+                    
+                    if (data.results && data.results.length > 0) {
+                        dropdown.innerHTML = '';
+                        data.results.forEach(taxon => {
+                            const item = document.createElement('div');
+                            item.className = 'p-2.5 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer flex items-center space-x-2 border-b border-slate-100 dark:border-slate-700/50 last:border-0';
+                            
+                            const imgUrl = taxon.default_photo ? taxon.default_photo.square_url : 'https://placehold.co/40x40/cbd5e1/475569?text=Taxon';
+                            item.innerHTML = `
+                                <img src="${imgUrl}" class="w-8 h-8  object-cover bg-slate-200">
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-semibold text-xs text-ink truncate">${taxon.name}</p>
+                                    <p class="text-[10px] text-muted truncate">${taxon.preferred_common_name || ''} • Rank: ${taxon.rank}</p>
+                                </div>
+                                <span class="font-mono text-[10px] border border-line px-1.5 py-0.5 rounded">ID: ${taxon.id}</span>
+                            `;
+                            item.onclick = () => {
+                                dropdown.classList.add('hidden');
+                                document.getElementById('custom-taxon-search').value = '';
+                                queueSubmission({ name: taxon.name, taxonId: taxon.id });
+                            };
+                            dropdown.appendChild(item);
+                        });
+                        dropdown.classList.remove('hidden');
+                    } else {
+                        dropdown.classList.add('hidden');
+                    }
+                } catch (err) {
+                    console.error('Taxon search error:', err);
+                }
+            }, 300);
+        }
+
+        async function validateTokenAndFetch() {
+            const authDot = document.getElementById('auth-dot');
+            const authLabel = document.getElementById('auth-label');
+
+            if (!state.token) {
+                authDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+                authLabel.textContent = 'Token Missing (Anonymous Mode)';
+                fetchBatchObservations();
+                return;
+            }
+
+            try {
+                const res = await fetch('https://api.inaturalist.org/v1/users/me', {
+                    headers: { 'Authorization': state.token }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const user = data.results[0];
+                    authDot.className = 'w-2 h-2 rounded-full bg-accent animate-pulse';
+                    authLabel.textContent = `Connected (${user.login})`;
+                    fetchBatchObservations();
+                } else {
+                    authDot.className = 'w-2 h-2 rounded-full bg-rust';
+                    authLabel.textContent = 'Token Invalid / Expired';
+                    fetchBatchObservations();
+                }
+            } catch (err) {
+                authDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+                authLabel.textContent = 'Connection Error';
+                fetchBatchObservations();
+            }
+        }
+
+        async function fetchBatchObservations() {
+            const loader = document.getElementById('carousel-loader');
+            loader.classList.remove('hidden');
+
+            try {
+                let url = `https://api.inaturalist.org/v1/observations?quality_grade=${state.quality}&verifiable=true&reviewed=false&per_page=50`;
+                if (state.placeId) url += `&place_id=${state.placeId}`;
+                if (state.unknownOnly) url += '&iconic_taxa=unknown';
+                if (state.oldestFirst) url += '&order_by=observed_on&order=asc';
+                if (state.skipDays > 0) {
+                    const cutoff = new Date(Date.now() - state.skipDays * 86400000);
+                    url += `&created_d2=${cutoff.toISOString().slice(0, 10)}`;
+                }
+
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                // Filter out already triaged/seen observation IDs from localStorage
+                const triagedSet = new Set(state.triagedIds);
+                state.observations = (data.results || []).filter(obs => !triagedSet.has(obs.id)
+                    && (!state.unknownOnly || (!obs.taxon && !obs.identifications_count)));
+                state.currentIndex = 0;
+
+                if (state.observations.length > 0) {
+                    renderCurrentObservation();
+                } else {
+                    showEmptyQueueState();
+                }
+            } catch (err) {
+                console.error('Fetch error:', err);
+                document.getElementById('queue-status').textContent = 'Error loading observations';
+                loader.classList.add('hidden');
+            }
+        }
+
+        function showEmptyQueueState() {
+            document.getElementById('carousel-loader').classList.add('hidden');
+            document.getElementById('carousel-img').src = 'https://placehold.co/600x400/e2e8f0/64748b?text=Queue+Completed!+All+Caught+Up';
+            document.getElementById('obs-id-badge').textContent = '#------';
+            document.getElementById('obs-user').textContent = 'All observations triaged';
+            document.getElementById('obs-place').textContent = 'No more items in queue';
+            document.getElementById('obs-date').textContent = '---';
+            document.getElementById('obs-extra-box').classList.add('hidden');
+            document.getElementById('queue-status').textContent = 'Queue empty. Click Refresh Queue.';
+        }
+
+        function renderCurrentObservation() {
+            if (!state.observations.length || state.currentIndex >= state.observations.length) {
+                fetchBatchObservations();
+                return;
+            }
+
+            const obs = state.observations[state.currentIndex];
+            state.currentPhotoIndex = 0;
+
+            document.getElementById('obs-id-badge').textContent = `#${obs.id}`;
+            document.getElementById('obs-user').textContent = obs.user ? obs.user.login : 'Unknown user';
+            document.getElementById('obs-inat-link').href = obs.uri || `https://www.inaturalist.org/observations/${obs.id}`;
+            
+            // Date & Place
+            document.getElementById('obs-date').innerHTML = `<i class="fa-regular fa-calendar text-accent"></i> ${obs.observed_on_details ? obs.observed_on_details.date : (obs.observed_on || 'Unknown date')}`;
+            document.getElementById('obs-place').innerHTML = `<i class="fa-solid fa-location-dot text-rose-500"></i> ${escapeHtml(obs.place_guess || 'Unknown location')}`;
+            document.getElementById('obs-place').title = obs.place_guess || '';
+            document.getElementById('obs-license').innerHTML = `<i class="fa-solid fa-shield-halved text-amber-500"></i> ${obs.license_code ? obs.license_code.toUpperCase() : 'All Rights Reserved'} / ${obs.quality_grade}`;
+
+            // Description / Notes
+            const descBox = document.getElementById('obs-desc-box');
+            if (obs.description) {
+                document.getElementById('obs-desc').textContent = obs.description;
+                descBox.classList.remove('hidden');
+            } else {
+                descBox.classList.add('hidden');
+            }
+
+            renderUploaderDetails(obs);
+
+            // Photos
+            updatePhotoDisplay(obs);
+
+            // Audio sound recordings
+            const audioContainer = document.getElementById('audio-container');
+            const audioElement = document.getElementById('obs-audio');
+            if (obs.sounds && obs.sounds.length > 0) {
+                audioElement.src = obs.sounds[0].file_url;
+                audioContainer.classList.remove('hidden');
+            } else {
+                audioElement.pause();
+                audioElement.src = '';
+                audioContainer.classList.add('hidden');
+            }
+
+            // Identifications list
+            const idContainer = document.getElementById('obs-identifications');
+            idContainer.innerHTML = '';
+            if (obs.identifications && obs.identifications.length > 0) {
+                obs.identifications.forEach(id => {
+                    const badge = document.createElement('span');
+                    badge.className = 'px-2 py-1  border border-line text-[11px] font-medium text-ink flex items-center space-x-1.5';
+                    const taxonName = id.taxon ? id.taxon.name : 'Unknown';
+                    badge.innerHTML = `<i class="fa-solid fa-tag text-accent"></i> <span>${taxonName}</span>`;
+                    idContainer.appendChild(badge);
+                });
+            } else {
+                idContainer.innerHTML = '<span class="text-xs text-muted italic">No community identifications yet</span>';
+            }
+
+            document.getElementById('queue-status').textContent = `Queue: Observation ${state.currentIndex + 1} of ${state.observations.length}`;
+            document.getElementById('carousel-loader').classList.add('hidden');
+        }
+
+        function escapeHtml(text) {
+            return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // Annotation responses only carry term IDs; labels come from /controlled_terms (fetched once)
+        const termLabels = {};
+        let termLabelsPromise = null;
+        function loadTermLabels() {
+            if (!termLabelsPromise) {
+                termLabelsPromise = fetch('https://api.inaturalist.org/v1/controlled_terms')
+                    .then(res => res.json())
+                    .then(data => (data.results || []).forEach(t => {
+                        termLabels[t.id] = t.label;
+                        (t.values || []).forEach(v => { termLabels[v.id] = v.label; });
+                    }))
+                    .catch(() => { termLabelsPromise = null; });
+            }
+            return termLabelsPromise;
+        }
+
+        // Everything else the uploader attached: species guess, tags, observation fields, annotations, etc.
+        function renderUploaderDetails(obs) {
+            const rows = [];
+            const add = (label, value) => {
+                if (value !== undefined && value !== null && String(value).trim() !== '') rows.push([label, String(value)]);
+            };
+
+            add('Species guess', obs.species_guess);
+            if (obs.time_observed_at) add('Time observed', new Date(obs.time_observed_at).toLocaleString());
+            add('Time zone', obs.observed_time_zone);
+            if (obs.created_at) add('Uploaded', new Date(obs.created_at).toLocaleString());
+            if (obs.tags && obs.tags.length) add('Tags', obs.tags.join(', '));
+            (obs.ofvs || []).forEach(f => add(f.name || 'Field', f.value));
+            const missingLabels = !Object.keys(termLabels).length && (obs.annotations || []).length > 0;
+            (obs.annotations || []).forEach(a => {
+                const attr = termLabels[a.controlled_attribute_id];
+                const val = termLabels[a.controlled_value_id];
+                if (attr && val) add(attr, val);
+            });
+            if (missingLabels) {
+                loadTermLabels().then(() => {
+                    const current = state.observations[state.currentIndex];
+                    if (current && current.id === obs.id && Object.keys(termLabels).length) renderUploaderDetails(obs);
+                });
+            }
+            if (obs.captive) add('Captive / cultivated', 'Yes');
+            if (obs.geoprivacy) add('Geoprivacy', obs.geoprivacy);
+            if (obs.positional_accuracy) add('Location accuracy', `${obs.positional_accuracy} m`);
+            if (obs.sounds && obs.sounds.length) add('Sounds', obs.sounds.length);
+            (obs.outlinks || []).forEach(l => add('Linked at', l.source));
+
+            const box = document.getElementById('obs-extra-box');
+            document.getElementById('obs-extra').innerHTML = rows.map(([label, value]) =>
+                `<div class="flex gap-2 min-w-0"><dt class="text-ink shrink-0">${escapeHtml(label)}:</dt><dd class="font-medium text-ink break-words min-w-0">${escapeHtml(value)}</dd></div>`
+            ).join('');
+            box.classList.toggle('hidden', rows.length === 0);
+        }
+
+        function updatePhotoDisplay(obs) {
+            const img = document.getElementById('carousel-img');
+            const counter = document.getElementById('photo-counter');
+            
+            if (obs.photos && obs.photos.length > 0) {
+                const photo = obs.photos[state.currentPhotoIndex];
+                img.src = photo.url ? photo.url.replace('square', 'large') : 'https://placehold.co/600x400/e2e8f0/64748b?text=No+Photo';
+                document.getElementById('modal-zoomed-img').src = img.src;
+                counter.textContent = `${state.currentPhotoIndex + 1} / ${obs.photos.length}`;
+                counter.style.display = obs.photos.length > 1 ? 'block' : 'none';
+            } else {
+                img.src = 'https://placehold.co/600x400/e2e8f0/64748b?text=No+Photo+Available';
+                document.getElementById('modal-zoomed-img').src = img.src;
+                counter.textContent = '0 / 0';
+            }
+        }
+
+        function nextPhoto() {
+            const obs = state.observations[state.currentIndex];
+            if (obs && obs.photos && obs.photos.length > 1) {
+                state.currentPhotoIndex = (state.currentPhotoIndex + 1) % obs.photos.length;
+                updatePhotoDisplay(obs);
+            }
+        }
+
+        function prevPhoto() {
+            const obs = state.observations[state.currentIndex];
+            if (obs && obs.photos && obs.photos.length > 1) {
+                state.currentPhotoIndex = (state.currentPhotoIndex - 1 + obs.photos.length) % obs.photos.length;
+                updatePhotoDisplay(obs);
+            }
+        }
+
+        function toggleAudio() {
+            const audio = document.getElementById('obs-audio');
+            const icon = document.getElementById('audio-icon');
+            if (audio.paused) {
+                audio.play();
+                icon.className = 'fa-solid fa-pause';
+            } else {
+                audio.pause();
+                icon.className = 'fa-solid fa-play';
+            }
+        }
+
+        function queueSubmission(taxon) {
+            if (!state.observations.length) return;
+            const obs = state.observations[state.currentIndex];
+
+            // Clear previous pending undo buffer if any
+            if (state.undoBuffer) {
+                commitObservationNow(state.undoBuffer);
+            }
+
+            state.undoBuffer = {
+                obsId: obs.id,
+                taxon: taxon,
+                index: state.currentIndex
+            };
+
+            // Show Undo Toast
+            showUndoToast(obs.id, taxon.name);
+
+            // Advance immediately in UI for snappiness
+            markObservationTriagedLocally(obs.id);
+            state.currentIndex++;
+            renderCurrentObservation();
+        }
+
+        function showUndoToast(obsId, taxonName) {
+            const toast = document.getElementById('undo-toast');
+            const text = document.getElementById('undo-toast-text');
+            const countdownEl = document.getElementById('undo-countdown');
+            const circle = document.getElementById('undo-progress-circle');
+
+            text.textContent = `Queued ID: ${taxonName} for Obs #${obsId}`;
+            toast.classList.remove('hidden', 'translate-y-10', 'opacity-0');
+
+            let timeLeft = 6;
+            countdownEl.textContent = timeLeft;
+            circle.style.strokeDashoffset = '0';
+
+            clearInterval(state.undoTimer);
+            state.undoTimer = setInterval(() => {
+                timeLeft--;
+                countdownEl.textContent = timeLeft;
+                // circumference is 87.96
+                const offset = 87.96 * (1 - timeLeft / 6);
+                circle.style.strokeDashoffset = offset;
+
+                if (timeLeft <= 0) {
+                    clearInterval(state.undoTimer);
+                    if (state.undoBuffer) {
+                        commitObservationNow(state.undoBuffer);
+                        state.undoBuffer = null;
+                    }
+                    hideUndoToast();
+                }
+            }, 1000);
+        }
+
+        function hideUndoToast() {
+            const toast = document.getElementById('undo-toast');
+            toast.classList.add('translate-y-10', 'opacity-0');
+            setTimeout(() => toast.classList.add('hidden'), 300);
+        }
+
+        function triggerUndo() {
+            clearInterval(state.undoTimer);
+            hideUndoToast();
+
+            if (state.undoBuffer) {
+                // Revert index and remove from triaged local storage temporarily
+                state.currentIndex = state.undoBuffer.index;
+                state.triagedIds = state.triagedIds.filter(id => id !== state.undoBuffer.obsId);
+                localStorage.setItem('inat_triaged_ids', JSON.stringify(state.triagedIds));
+                state.undoBuffer = null;
+                updateStats();
+                renderCurrentObservation();
+            }
+        }
+
+        async function commitObservationNow(buffer) {
+            // Send API request to iNaturalist /v1/identifications
+            if (!state.token) {
+                console.log('Skipping API submission in anonymous mode (token missing)');
+                return;
+            }
+
+            try {
+                const res = await fetch('https://api.inaturalist.org/v1/identifications', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': state.token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        identification: {
+                            observation_id: buffer.obsId,
+                            taxon_id: buffer.taxon.taxonId
+                        }
+                    })
+                });
+
+                if (res.ok) {
+                    console.log(`Successfully submitted taxon ${buffer.taxon.taxonId} for observation ${buffer.obsId}`);
+                    state.streak++;
+                    localStorage.setItem('inat_streak', state.streak);
+                    updateStats();
+                } else {
+                    const errData = await res.json();
+                    console.error('iNat API submission failed:', errData);
+                }
+            } catch (err) {
+                console.error('API submission network error:', err);
+            }
+        }
+
+        function markObservationTriagedLocally(obsId) {
+            if (!state.triagedIds.includes(obsId)) {
+                state.triagedIds.push(obsId);
+                localStorage.setItem('inat_triaged_ids', JSON.stringify(state.triagedIds));
+                updateStats();
+            }
+        }
+
+        function skipObservation() {
+            if (!state.observations.length) return;
+            const obs = state.observations[state.currentIndex];
+            markObservationTriagedLocally(obs.id);
+            state.currentIndex++;
+            renderCurrentObservation();
+        }
+
+        function handleSpecialAction(actionType) {
+            if (!state.observations.length) return;
+            const obs = state.observations[state.currentIndex];
+            markObservationTriagedLocally(obs.id);
+            state.currentIndex++;
+            renderCurrentObservation();
+        }
+
+        function handleKeyPress(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+            if (e.key >= '1' && e.key <= '9') {
+                const group = DEFAULT_GROUPS.find(g => g.key === e.key);
+                if (group) handleGroupClick(group);
+            } else if (e.key.toLowerCase() === 's') {
+                skipObservation();
+            } else if (e.key.toLowerCase() === 'z') {
+                if (state.undoBuffer) triggerUndo();
+            } else if (e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                document.getElementById('custom-taxon-search').focus();
+            }
+        }
+
+        function openSettingsModal() {
+            document.getElementById('input-api-token').value = state.token;
+            document.getElementById('select-quality').value = state.quality;
+            document.getElementById('input-place-id').value = state.placeId;
+            document.getElementById('input-skip-days').value = state.skipDays;
+            document.getElementById('input-unknown-only').checked = state.unknownOnly;
+            document.getElementById('input-oldest-first').checked = state.oldestFirst;
+            document.getElementById('settings-triaged-count').textContent = state.triagedIds.length;
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            state.token = extractToken(document.getElementById('input-api-token').value);
+            state.quality = document.getElementById('select-quality').value;
+            state.placeId = document.getElementById('input-place-id').value.trim();
+            state.skipDays = parseSkipDays(document.getElementById('input-skip-days').value);
+            state.unknownOnly = document.getElementById('input-unknown-only').checked;
+            state.oldestFirst = document.getElementById('input-oldest-first').checked;
+
+            localStorage.setItem('inat_token', state.token);
+            localStorage.setItem('inat_quality', state.quality);
+            localStorage.setItem('inat_place', state.placeId);
+            localStorage.setItem('inat_skip_days', String(state.skipDays));
+            localStorage.setItem('inat_unknown_only', String(state.unknownOnly));
+            localStorage.setItem('inat_oldest_first', String(state.oldestFirst));
+
+            closeSettingsModal();
+            validateTokenAndFetch();
+        }
+
+        function clearLocalStorageHistory() {
+            if (confirm('Are you sure you want to clear your permanently stored triaged observation history?')) {
+                state.triagedIds = [];
+                localStorage.removeItem('inat_triaged_ids');
+                updateStats();
+                fetchBatchObservations();
+                closeSettingsModal();
+            }
+        }
+
+        function openImageModal() {
+            document.getElementById('image-modal').classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            document.getElementById('image-modal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
