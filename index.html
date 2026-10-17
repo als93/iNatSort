@@ -1118,7 +1118,7 @@
             }
         }
 
-        // items with an id are fixed; items with q are looked up by name when picked
+        // items with an id are fixed
         const PLACE_PRESETS = [
             { group: 'Anywhere', items: [{ name: 'Worldwide (no place filter)', id: '' }] },
             { group: 'Continents', items: [
@@ -1135,8 +1135,8 @@
                 { name: 'Mexico', id: 6793 },
                 { name: 'California', id: 14 }
             ]},
-            { group: 'Regions (looked up by name)', items: [
-                { name: 'California Floristic Province', q: 'California Floristic Province' }
+            { group: 'Regions', items: [
+                { name: 'California Floristic Province', id: 62068 }
             ]}
         ];
         let placeNameTimer = null;
