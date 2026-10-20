@@ -1,0 +1,27 @@
+{
+  "name": "inatsort",
+  "version": "1.0.0",
+  "description": "iNaturalist observation sorting and identification tool",
+  "main": "index.html",
+  "scripts": {
+    "test": "echo \"No tests specified\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/als93/iNatSort.git"
+  },
+  "keywords": [
+    "inaturalist",
+    "observations",
+    "identification"
+  ],
+  "author": "",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/als93/iNatSort/issues"
+  },
+  "homepage": "https://github.com/als93/iNatSort#readme",
+  "dependencies": {
+    "@vercel/speed-insights": "^2.0.0"
+  }
+}
